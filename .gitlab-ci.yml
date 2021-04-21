@@ -1,0 +1,30 @@
+include:
+  - template: 'Workflows/MergeRequest-Pipelines.gitlab-ci.yml'
+  - remote: 'https://gitlab.com/clci/gitlab-ci/-/raw/release/v1-stable/ci-cache.yml'
+  - remote: 'https://gitlab.com/clci/gitlab-ci/-/raw/release/v1-stable/clpm.yml'
+
+.test:
+  extends:
+    - .clci ci cache per job
+  before_script:
+    - !referece [.clci clpm install, script]
+    - !referece [.clci clpm configure, script]
+    - $CLPM bundle install --no-resolve
+
+test abcl:
+  image: clfoundation/abcl
+  extends: .test
+  script:
+    - $CLPM bundle exec -- abcl --batch --load scripts/test.lisp
+
+test ccl:
+  image: clfoundation/ccl
+  extends: .test
+  script:
+    - $CLPM bundle exec -- ccl -b -l scripts/test.lisp
+
+test sbcl:
+  image: clfoundation/sbcl
+  extends: .test
+  script:
+    - $CLPM bundle exec -- sbcl --script scripts/test.lisp

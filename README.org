@@ -1,0 +1,166 @@
+#+TITLE: Adopt Subcommands
+#+AUTHOR: Eric Timmons <eric@timmons.dev>
+
+This library is an extension of Steve Losh's [[https://docs.stevelosh.com/adopt/][Adopt]] library (hands down my
+favorite CLI options parser for CL) to support arbitrarily nested
+subcommands. Not all features of Adopt are nicely supported yet (like producing
+man pages for subcommands), but the basic functionality is there.
+
+This library tries to follow the same aesthetic as Adopt (such as interfaces
+encouraged to be defined with =defparameter= and errors signaled with some
+restarts provided). The primary exception is that you must provide functions
+that this library will call for each of your terminal subcommands.
+
+Subcommands are organized into folders and terminals. Both folders and
+terminals can have options associated with them. Folders can additionally
+contain other folders and terminals. Terminals *must* have a function
+associated with them that will be called when a CLI command is dispatched. This
+function must take two arguments: a list of arguments (strings) and an ='EQL=
+hash table of arguments.
+
+Folders *may* have a function associated with them that is called before
+attempting to further process the remaining arguments. This is useful to set
+bind dynamic variables or munge the options passed down to the later
+levels. This function, if provided, must take three arguments: a list of
+arguments (strings), an ='EQL= hash table of arguments, and a thunk that must
+be called to continue processing.
+
+This work was largely inspired by Steve Losh's [[https://old.reddit.com/r/Common_Lisp/comments/m7gjno/writing_small_cli_programs_in_common_lisp_steve/grdqq1j/][Reddit comment]] on a quick and
+dirty method to implement subcommands using Adopt. For a while, I had my own
+way of doing this (that also supported arbitrarily nested subcommands), but it
+was very nasty because I had somehow missed the existence of the
+=adopt:treat-as-argument= restart (d'oh). So after seeing that, I cleaned up my
+code and packaged it up as a library for others to use.
+
+For reference, here is how to implement Steve's example from Reddit using this
+library:
+
+#+begin_src common-lisp
+  (require :asdf)
+  (eval-when (:compile-toplevel :load-toplevel :execute)
+    ;; When this gets into Quicklisp...
+    (ql:quickload '(:adopt-subcommands) :silent t))
+
+  (defpackage :subex
+    (:use :cl)
+    (:export :toplevel *ui*))
+
+  (in-package :subex)
+
+  (defmacro define-toplevel ((name ui) (arguments options) &body body)
+    `(defun ,name (,arguments ,options)
+       (when (gethash 'help ,options)
+         (adopt-subcommands:print-help ,ui)
+         (adopt:exit))
+       ,@body))
+
+  ;;;; Subcommand Foo -----------------------------------------------------------
+  (defparameter *o/foo/a*
+    (adopt:make-option 'a :result-key 'mode :short #\a :help "run foo in mode A" :reduce (constantly :a)))
+
+  (defparameter *o/foo/b*
+    (adopt:make-option 'b :result-key 'mode :short #\b :help "run foo in mode B" :reduce (constantly :b)))
+
+  (defparameter *ui/foo*
+    (adopt-subcommands:make-subcommand-terminal
+      :name "subex foo"
+      :usage "foo [-a|-b]"
+      :summary "foo some things"
+      :help "foo some things"
+      :contents (list *o/foo/a* *o/foo/b*)
+      :function 'run/foo))
+
+  (define-toplevel (run/foo *ui/foo*) (arguments options)
+    (unless (null arguments)
+      (error "Foo does not take arguments, got ~S" arguments))
+    (format t "Running foo in ~A mode.~%" (gethash 'mode options)))
+
+  ;;;; Subcommand Bar -----------------------------------------------------------
+  (defparameter *o/bar/meow*
+    (adopt:make-option 'meow :long "meow" :help "meow loudly after each step" :reduce (constantly t)))
+
+  (defparameter *ui/bar*
+    (adopt-subcommands:make-subcommand-terminal
+      :name "subex bar"
+      :usage "bar [--meow] FILE..."
+      :summary "bar some files"
+      :help "bar some files"
+      :contents (list *o/bar/meow*)
+      :function 'run/bar))
+
+  (define-toplevel (run/bar *ui/bar*) (paths options)
+    (when (null paths)
+      (error "Bar requires arguments, got none."))
+    (dolist (p paths)
+      (format t "Bar-ing ~A.~%" p)
+      (when (gethash 'meow options)
+        (write-line "meow."))))
+
+  ;;;; Global Options and UI ----------------------------------------------------
+  (defparameter *o/help*
+    (adopt:make-option 'help :long "help" :help "display help and exit" :reduce (constantly t)))
+
+  (defparameter *o/version*
+    (adopt:make-option 'version :long "version" :help "display version and exit" :reduce (constantly t)))
+
+  (defparameter *ui*
+    (adopt-subcommands:make-subcommand-folder
+      :name "subex"
+      :usage "[subcommand] [options]"
+      :help "subcommand example program"
+      :summary "an example program that uses subcommands"
+      :contents (list *o/help* *o/version* *ui/foo* *ui/bar*)
+      :function 'run/global))
+
+  (defun run/global (arguments options thunk)
+    (declare (ignore arguments))
+    (when (gethash 'version options)
+      (write-line "1.0.0")
+      (adopt:exit))
+    (funcall thunk))
+
+  ;;;; Toplevel -----------------------------------------------------------------
+
+  (defun toplevel ()
+    (sb-ext:disable-debugger)
+    (handler-bind ((adopt-subcommands:folder-is-terminal 'adopt-subcommands:print-help-and-exit))
+      (adopt-subcommands:dispatch *ui*)))
+
+  (toplevel)
+#+end_src
+
+* Deficiencies
+
+  These are the current deficiencies that I would like to fix some day:
+
+  1. No easy way to print a help message for an item that also includes text
+     from its parents. I suspect this will be easy-ish to fix, but I would like
+     to reach out to Steve Losh first to figure out if he's amenable to
+     factoring out the different portions of =adopt:print-help= so they can be
+     reused instead of me having to reimplement them from scratch.
+
+     However, fixing this may also necessitate an API change, so that lists of
+     folders and terminals are passed around to the user provided functions.
+
+  2. Man page generation is not supported. The description for the above
+     deficiency also covers this one.
+
+  3. Options need to come after the subcommand that defines them. For example,
+     if =-a= is defined as part of =foo='s interface, the following will not
+     work:
+
+     #+begin_src shell
+       my-program -a foo
+     #+end_src
+
+     But this will:
+
+     #+begin_src shell
+       my-program foo -a
+     #+end_src
+
+     This could be easily fixed for parameterless options. It could also be
+     easily fixed for options with parameters, so long as the argument list has
+     the parameter in the same token as the option (e.g. =--foo=5= instead of
+     =--foo 5=). But a general purpose solution is harder and it is not obvious
+     it's worth it.
