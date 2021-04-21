@@ -7,8 +7,8 @@ include:
   extends:
     - .clci ci cache per job
   before_script:
-    - !referece [.clci clpm install, script]
-    - !referece [.clci clpm configure, script]
+    - !reference [.clci clpm install, script]
+    - !reference [.clci clpm configure, script]
     - $CLPM bundle install --no-resolve
 
 test abcl:
