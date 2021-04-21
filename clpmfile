@@ -1,9 +1,7 @@
 ;;; -*- Mode: common-lisp; -*-
 (:api-version "0.3")
 
-(:source "mers" :url "https://clpi.mers.group/" :type :clpi)
 (:source "quicklisp" :url "https://quicklisp.common-lisp-project-index.org/" :type :ql-clpi)
-(:source "quicklisp-slow" :url "https://beta.quicklisp.org/dist/quicklisp.txt" :type :quicklisp)
 
 (:asd "adopt-subcommands.asd")
 (:asd "adopt-subcommands-test.asd")

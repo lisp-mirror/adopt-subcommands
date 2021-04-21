@@ -12,11 +12,8 @@
 (:implicit-file :type :file-system :system-files
  ("adopt-subcommands-test.asd" "adopt-subcommands.asd"))
 (:implicit-vcs :type :vcs :projects nil)
-("mers" :url "https://clpi.mers.group/" :type :clpi)
 ("quicklisp" :url "https://quicklisp.common-lisp-project-index.org/" :type
  :ql-clpi)
-("quicklisp-slow" :url "https://beta.quicklisp.org/dist/quicklisp.txt" :type
- :quicklisp)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -37,8 +34,7 @@
 ("adopt-subcommands-test.asd" :version :newest :source :implicit-file :systems
  ("adopt-subcommands-test"))
 ("adopt-subcommands.asd" :version :newest :source :implicit-file :systems
- ("adopt-subcommands" "adopt-subcommands/adopt-subcommands"
-  "adopt-subcommands/subcommand-interface"))
+ ("adopt-subcommands"))
 ("alexandria" :version "2021-04-11" :source "quicklisp" :systems ("alexandria"))
 ("asdf-flv" :version "2016-04-21" :source "quicklisp" :systems
  ("net.didierverna.asdf-flv"))
@@ -55,19 +51,13 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 :reverse-dependencies
-("adopt"
- ((:system :name "adopt-subcommands/subcommand-interface")
-  (:system :name "adopt"))
- ((:system :name "adopt-subcommands/adopt-subcommands")
-  (:system :name "adopt")))
+("adopt" ((:system :name "adopt-subcommands") (:system :name "adopt")))
 
 ("adopt-subcommands-test.asd"
  (t (:asd-file :name "adopt-subcommands-test.asd")))
 
 ("adopt-subcommands.asd"
  ((:system :name "adopt-subcommands-test") (:system :name "adopt-subcommands"))
- ((:system :name "adopt-subcommands")
-  (:system :name "adopt-subcommands/adopt-subcommands"))
  (t (:asd-file :name "adopt-subcommands.asd")))
 
 ("alexandria" ((:system :name "fiveam") (:system :name "alexandria")))
@@ -75,13 +65,13 @@
 ("asdf-flv"
  ((:system :name "fiveam") (:system :name "net.didierverna.asdf-flv")))
 
-("bobbin" ((:system :name "adopt") (:system :name "bobbin")))
+("bobbin" ((:system :name "adopt-subcommands") (:system :name "bobbin"))
+ ((:system :name "adopt") (:system :name "bobbin")))
 
 ("fiveam" ((:system :name "adopt-subcommands-test") (:system :name "fiveam")))
 
 ("split-sequence" ((:system :name "bobbin") (:system :name "split-sequence"))
- ((:system :name "adopt-subcommands/adopt-subcommands")
-  (:system :name "split-sequence"))
+ ((:system :name "adopt-subcommands") (:system :name "split-sequence"))
  ((:system :name "adopt") (:system :name "split-sequence")))
 
 ("trivial-backtrace"
