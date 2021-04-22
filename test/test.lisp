@@ -75,7 +75,8 @@
 (defvar *b-args*)
 (defvar *b-opts*)
 
-(defun run-b (arguments options thunk)
+(defun run-b (arguments options path thunk)
+  (declare (ignore path))
   (psetf *b-run-p* t
          *b-args* arguments
          *b-opts* options)

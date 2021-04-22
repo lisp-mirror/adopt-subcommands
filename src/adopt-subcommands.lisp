@@ -97,8 +97,9 @@ automatically by splitting `name` on space characters and taking the last
 entry.
 
 When this subcommand is dispatched, `function` is called with a list of
-remaining arguments and an `eql` hash table containing all the parsed
-options. `function` is required.
+remaining arguments, an `eql` hash table containing all the parsed options, and
+a path object representing all folders and terminal traversed (the path is
+currently only useful for passing to the PRINT-HELP). `function` is required.
 
 The remaining arguments are passed directly to `adopt:make-interface`."
   (declare (ignore summary usage help manual examples contents))
@@ -134,9 +135,10 @@ automatically by splitting `name` on space characters and taking the last
 entry.
 
 When this subcommand is dispatched, `function` is called with a list of
-remaining arguments, an `eql` hash table containing all the parsed options, and
-a thunk that continues processing the subcommands when called. If not provided,
-the thunk is simply called.
+remaining arguments, an `eql` hash table containing all the parsed options, a
+path object representing all folders traversed (the path is currently only
+useful for passing to the PRINT-HELP), and a thunk that continues processing
+the subcommands when called. If not provided, the thunk is simply called.
 
 The remaining arguments are passed directly to `adopt:make-interface`."
   (declare (ignore summary usage help manual examples))
@@ -205,6 +207,9 @@ The remaining arguments are passed directly to `adopt:make-interface`."
 ;;; * Printing Help
 
 (defun print-entry-options (entry stream width option-width)
+  "Print the options for an interface in a path.
+
+This code is mostly copied from Adopt. See LICENSE for more information."
   (format stream "~%~A Options:~%" (adopt::name (interface entry)))
   (dolist (group (adopt::groups (interface entry)))
     (when (or (adopt::options group) (adopt::help group))
@@ -229,6 +234,11 @@ The remaining arguments are passed directly to `adopt:make-interface`."
                           (width 80)
                           (option-width 20)
                           (include-examples t))
+  "Print the help for PATH. Prints the examples and usage information for the
+most specific interface on the path. Prints the options for all interfaces on
+the path.
+
+This code is mostly copied from Adopt. See LICENSE for more information."
   (assert (> width (+ 2 option-width 2)) (width option-width)
           "WIDTH (~D) must be at least 4 greater than OPTION-WIDTH (~D)"
           width option-width)
@@ -259,7 +269,13 @@ The remaining arguments are passed directly to `adopt:make-interface`."
                            width)))))
 
 (defgeneric print-help-and-exit (object &key exit-code stream program-name width option-width
-                                          include-examples))
+                                          include-examples)
+  (:documentation
+   "A GF version of ADOPT:PRINT-HELP-AND-EXIT that additionally dispatches for
+the objects defined by this library.
+
+Additionally, we use UIOP:QUIT since that works on more implementations than
+ADOPT:EXIT."))
 
 (defmethod print-help-and-exit (object &rest keys &key (exit-code 0) &allow-other-keys)
   (apply #'print-help object (plist-remove-keys keys :exit-code))
@@ -268,7 +284,10 @@ The remaining arguments are passed directly to `adopt:make-interface`."
 (defmethod print-help-and-exit ((c subcommand-error) &rest keys)
   (apply #'invoke-restart (find-restart 'print-help-and-exit c) keys))
 
-(defgeneric print-help (object &key stream program-name width option-width include-examples))
+(defgeneric print-help (object &key stream program-name width option-width include-examples)
+  (:documentation
+   "A GF version of ADOPT:PRINT-HELP that additionally dispatches for the
+objects defined by this library."))
 
 (defmethod print-help ((object subcommand-path) &rest args)
   (apply #'print-path-help object args))
@@ -300,6 +319,13 @@ The remaining arguments are passed directly to `adopt:make-interface`."
       (print-help-and-exit path :stream stream :exit-code exit-code))))
 
 (defun dispatch (interface &key (arguments (rest (adopt:argv))) print-help-and-exit)
+  "Given a subcommand UI (as returned by MAKE-SUBCOMMAND-FOLDER), dispatch
+based on the provided ARGUMENTS.
+
+If PRINT-HELP-AND-EXIT is provided, it must be a symbol denoting the option
+corresponding to your UI's help flag. If provided and the help option is
+present in the command line, the help will be printed and the program will exit
+when a terminal node is reached."
   (dispatch-subcommand interface :arguments arguments
                                  :options (make-hash-table)
                                  :path (make-instance 'subcommand-path :path nil)
@@ -350,5 +376,5 @@ The remaining arguments are passed directly to `adopt:make-interface`."
                                                    :print-help-and-exit print-help-and-exit)))))
         (let ((next (%function folder)))
           (if next
-              (funcall next arguments options #'thunk)
+              (funcall next arguments options path #'thunk)
               (thunk)))))))
