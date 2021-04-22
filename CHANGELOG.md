@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.2 - 2021-04-22
+
 Added usage section to README.
 
 ## v0.2.1 - 2021-04-22
