@@ -192,6 +192,6 @@
             (handler-case
                 (dispatch *a* :arguments (list "b"))
               (folder-is-terminal (c)
-                (print-path-help (folder-is-terminal-path c) :stream s))))))
+                (print-help (folder-is-terminal-path c) :stream s))))))
     (is (uiop:string-suffix-p (uiop:stripln string) "Available subcommands:
   c"))))

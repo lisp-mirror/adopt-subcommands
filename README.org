@@ -50,7 +50,7 @@ library:
   (defmacro define-toplevel ((name ui) (arguments options) &body body)
     `(defun ,name (,arguments ,options path)
        (when (gethash 'help ,options)
-         (adopt-subcommands:print-path-help-and-exit path))
+         (adopt-subcommands:print-help-and-exit path))
        ,@body))
 
   ;;;; Subcommand Foo -----------------------------------------------------------

@@ -12,8 +12,7 @@
            #:folder-is-terminal-path
            #:make-subcommand-folder
            #:make-subcommand-terminal
-           #:print-path-help
-           #:print-path-help-and-exit
+           #:print-help
            #:print-help-and-exit
            #:unknown-subcommand
            #:unknown-subcommand-folder
@@ -162,6 +161,47 @@ The remaining arguments are passed directly to `adopt:make-interface`."
     folder))
 
 
+;;; * Subcommand paths
+
+(defclass subcommand-path ()
+  ((path
+    :initarg :path
+    :accessor path)))
+
+(defun extend-path (new-head path)
+  (make-instance 'subcommand-path
+                  :path (list* new-head (path path))))
+
+
+;;; * Conditions
+
+(define-condition subcommand-error (error)
+  ())
+
+(define-condition unknown-subcommand (subcommand-error)
+  ((folder
+    :initarg :folder
+    :reader unknown-subcommand-folder)
+   (key
+    :initarg :key
+    :reader unknown-subcommand-key)
+   (path
+    :initarg :path
+    :reader unknown-subcommand-path))
+  (:documentation
+   "Signals that a subcommand could not be found."))
+
+(define-condition folder-is-terminal (subcommand-error)
+  ((folder
+    :initarg :folder
+    :reader folder-is-terminal-folder)
+   (path
+    :initarg :path
+    :reader folder-is-terminal-path))
+  (:documentation
+   "Signals that no terminal subcommand was found"))
+
+
 ;;; * Printing Help
 
 (defun print-entry-options (entry stream width option-width)
@@ -192,7 +232,8 @@ The remaining arguments are passed directly to `adopt:make-interface`."
   (assert (> width (+ 2 option-width 2)) (width option-width)
           "WIDTH (~D) must be at least 4 greater than OPTION-WIDTH (~D)"
           width option-width)
-  (let ((most-specific-interface (interface (first path))))
+  (let* ((path (path path))
+         (most-specific-interface (interface (first path))))
     (format stream "~A - ~A~2%"
             (adopt::name most-specific-interface)
             (adopt::summary most-specific-interface))
@@ -217,42 +258,23 @@ The remaining arguments are passed directly to `adopt:make-interface`."
                                          (hash-table-keys (subcommands (first path)))))
                            width)))))
 
-(defun print-folder-help (folder &rest args &key (stream *standard-output*) (width 80))
-  "Prints help for the folder. Ends the help message with a list of the
-available subcommands."
-  (apply #'adopt:print-help (interface folder) args)
-  (terpri stream)
-  (write-line (bobbin:wrap (format nil "Available subcommands: ~{~A~^ ~}"
-                                   (hash-table-keys (subcommands folder)))
-                           width)
-              stream))
+(defgeneric print-help-and-exit (object &key exit-code stream program-name width option-width
+                                          include-examples))
 
-(defgeneric print-path-help-and-exit (path
-                                      &key stream program-name width option-width include-examples
-                                        code))
+(defmethod print-help-and-exit (object &rest keys &key (exit-code 0) &allow-other-keys)
+  (apply #'print-help object (plist-remove-keys keys :exit-code))
+  (uiop:quit exit-code))
 
-(defmethod print-path-help-and-exit ((path list)
-                                     &key
-                                       (stream *standard-output*)
-                                       (program-name (first (adopt:argv)))
-                                       (width 80)
-                                       (option-width 20)
-                                       (include-examples t)
-                                       (code 0))
-  (print-path-help path :stream stream
-                        :program-name program-name
-                        :width width
-                        :option-width option-width
-                        :include-examples include-examples)
-  (uiop:quit code))
+(defmethod print-help-and-exit ((c subcommand-error) &rest keys)
+  (apply #'invoke-restart (find-restart 'print-help-and-exit c) keys))
 
-(defun print-help-and-exit (c &key (code 1) (stream *standard-output*))
-  (invoke-restart (find-restart 'print-help-and-exit c) :code code :stream stream))
+(defgeneric print-help (object &key stream program-name width option-width include-examples))
 
-(defgeneric print-help (ui &rest args))
+(defmethod print-help ((object subcommand-path) &rest args)
+  (apply #'print-path-help object args))
 
 (defmethod print-help ((ui subcommand-folder) &rest args)
-  (apply #'print-folder-help ui args))
+  (apply #'print-help (make-instance 'subcommand-path :path (list ui)) args))
 
 (defmethod print-help ((ui subcommand-terminal) &rest args)
   (apply #'adopt:print-help (interface ui) args))
@@ -263,46 +285,24 @@ available subcommands."
 
 ;;; * Dispatching
 
-(define-condition unknown-subcommand (error)
-  ((folder
-    :initarg :folder
-    :reader unknown-subcommand-folder)
-   (key
-    :initarg :key
-    :reader unknown-subcommand-key)
-   (path
-    :initarg :path
-    :reader unknown-subcommand-path))
-  (:documentation
-   "Signals that a subcommand could not be found."))
-
-(define-condition folder-is-terminal (error)
-  ((folder
-    :initarg :folder
-    :reader folder-is-terminal-folder)
-   (path
-    :initarg :path
-    :reader folder-is-terminal-path))
-  (:documentation
-   "Signals that no terminal subcommand was found"))
-
 (defun signal-folder-is-terminal (folder path)
   (restart-case
       (error 'folder-is-terminal :folder folder :path path)
-    (print-help-and-exit (&key (code 1) (stream *standard-output*))
-      :report "Print help to STREAM and exit with CODE"
-      (print-path-help-and-exit path :code code :stream stream))))
+    (print-help-and-exit (&key (exit-code 1) (stream *standard-output*))
+      :report "Print help to STREAM and exit with EXIT-CODE"
+      (print-help-and-exit path :exit-code exit-code :stream stream))))
 
 (defun signal-unknown-subcommand (folder path key)
   (restart-case
-      (error 'unknown-subcommand :folder folder :key key :path)
-    (print-help-and-exit (&key (code 1) (stream *standard-output*))
-      :report "Print help to STREAM and exit with CODE"
-      (print-path-help-and-exit path :stream stream :code code))))
+      (error 'unknown-subcommand :folder folder :key key :path path)
+    (print-help-and-exit (&key (exit-code 1) (stream *standard-output*))
+      :report "Print help to STREAM and exit with EXIT-CODE"
+      (print-help-and-exit path :stream stream :exit-code exit-code))))
 
 (defun dispatch (interface &key (arguments (rest (adopt:argv))))
   (dispatch-subcommand interface :arguments arguments
-                                 :options (make-hash-table)))
+                                 :options (make-hash-table)
+                                 :path (make-instance 'subcommand-path :path nil)))
 
 (defgeneric dispatch-subcommand (interface &key arguments options))
 
@@ -313,7 +313,7 @@ available subcommands."
   (multiple-value-bind (new-arguments new-options)
       (adopt:parse-options (interface terminal) arguments)
     (funcall (%function terminal) new-arguments (merge-hts options new-options)
-             (list* terminal path))))
+             (extend-path terminal path))))
 
 (defmethod dispatch-subcommand ((folder subcommand-folder)
                                 &key (arguments (rest (adopt:argv)))
@@ -325,14 +325,15 @@ available subcommands."
     (let ((options (merge-hts options new-options))
           (arguments new-arguments))
       (flet ((thunk (&key (arguments arguments) (options options))
-               (unless (not (null (first arguments)))
-                 ;; This folder is terminal. Can't figure out what to do next!
-                 (signal-folder-is-terminal folder (list* folder path)))
-               (let ((subcommand (gethash (first arguments) (subcommands folder))))
-                 (unless (not (null subcommand))
-                   (signal-unknown-subcommand folder path (first arguments)))
-                 (dispatch-subcommand subcommand :options options :arguments (rest arguments)
-                                                 :path (list* folder path)))))
+               (let ((path (extend-path folder path)))
+                 (unless (not (null (first arguments)))
+                   ;; This folder is terminal. Can't figure out what to do next!
+                   (signal-folder-is-terminal folder path))
+                 (let ((subcommand (gethash (first arguments) (subcommands folder))))
+                   (unless (not (null subcommand))
+                     (signal-unknown-subcommand folder path (first arguments)))
+                   (dispatch-subcommand subcommand :options options :arguments (rest arguments)
+                                                   :path path)))))
         (let ((next (%function folder)))
           (if next
               (funcall next arguments options #'thunk)
