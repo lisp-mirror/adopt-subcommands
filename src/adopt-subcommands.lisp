@@ -9,14 +9,16 @@
            #:dispatch
            #:folder-is-terminal
            #:folder-is-terminal-folder
+           #:folder-is-terminal-path
            #:make-subcommand-folder
            #:make-subcommand-terminal
-           #:print-folder-help
-           #:print-help
+           #:print-path-help
+           #:print-path-help-and-exit
            #:print-help-and-exit
            #:unknown-subcommand
            #:unknown-subcommand-folder
-           #:unknown-subcommand-key))
+           #:unknown-subcommand-key
+           #:unknown-subcommand-path))
 
 (in-package #:adopt-subcommands)
 
@@ -63,18 +65,24 @@ into it."
         :collect k))
 
 
-;;; * Terminal subcommands
+;;; * Subcommands
 
-(defclass subcommand-terminal ()
+(defclass subcommand ()
   ((key
     :initarg :key
     :accessor key)
-   (interface
-    :initarg :interface
-    :accessor interface)
    (function
     :initarg :function
-    :accessor %function)))
+    :accessor %function)
+   (interface
+    :initarg :interface
+    :accessor interface)))
+
+
+;;; * Terminal subcommands
+
+(defclass subcommand-terminal (subcommand)
+  ())
 
 (defun subcommand-terminal-p (object)
   (typep object 'subcommand-terminal))
@@ -105,19 +113,10 @@ The remaining arguments are passed directly to `adopt:make-interface`."
 
 ;;; * Subcommand folders
 
-(defclass subcommand-folder ()
-  ((key
-    :initarg :key
-    :accessor key)
-   (pseudo-interface
-    :initarg :pseudo-interface
-    :accessor pseudo-interface)
-   (subcommands
+(defclass subcommand-folder (subcommand)
+  ((subcommands
     :initform (make-hash-table :test 'equal)
-    :accessor subcommands)
-   (function
-    :initarg :function
-    :accessor %function)))
+    :accessor subcommands)))
 
 (defun subcommand-folder-p (object)
   (typep object 'subcommand-folder))
@@ -149,12 +148,12 @@ The remaining arguments are passed directly to `adopt:make-interface`."
          (subcommand-folders (remove-if-not #'subcommand-folder-p contents))
          (options (set-difference (set-difference contents subcommand-terminals)
                                   subcommand-folders))
-         (pseudo-interface (apply #'adopt:make-interface
-                                    :contents options
-                                    (plist-remove-keys keys :key :contents :function)))
+         (interface (apply #'adopt:make-interface
+                             :contents options
+                             (plist-remove-keys keys :key :contents :function)))
          (folder (make-instance 'subcommand-folder
                                  :key (or key (key-from-name name))
-                                 :pseudo-interface pseudo-interface
+                                 :interface interface
                                  :function function)))
     (dolist (sub subcommand-terminals)
       (add-subcommand folder sub))
@@ -165,15 +164,87 @@ The remaining arguments are passed directly to `adopt:make-interface`."
 
 ;;; * Printing Help
 
+(defun print-entry-options (entry stream width option-width)
+  (format stream "~%~A Options:~%" (adopt::name (interface entry)))
+  (dolist (group (adopt::groups (interface entry)))
+    (when (or (adopt::options group) (adopt::help group))
+      (format stream "~%~A:~%" (or (adopt::title group) (adopt::name group) "Options"))
+      (let* ((help (adopt::help group))
+             (help-column 2)
+             (help-width (- width help-column))
+             (option-column 2)
+             (option-padding 2)
+             (doc-column (+ option-column option-width option-padding))
+             (doc-width (- width doc-column)))
+        (when help
+          (format stream "~{  ~A~^~%~}~2%"
+                  (bobbin:wrap (list help) help-width)))
+        (dolist (option (adopt::options group))
+          (adopt::print-option-help stream option option-column doc-column doc-width))))))
+
+(defun print-path-help (path
+                        &key
+                          (stream *standard-output*)
+                          (program-name (first (adopt:argv)))
+                          (width 80)
+                          (option-width 20)
+                          (include-examples t))
+  (assert (> width (+ 2 option-width 2)) (width option-width)
+          "WIDTH (~D) must be at least 4 greater than OPTION-WIDTH (~D)"
+          width option-width)
+  (let ((most-specific-interface (interface (first path))))
+    (format stream "~A - ~A~2%"
+            (adopt::name most-specific-interface)
+            (adopt::summary most-specific-interface))
+    (format stream "USAGE: ~A ~A~2%" program-name (adopt::usage most-specific-interface))
+    (format stream (bobbin:wrap (adopt::help most-specific-interface) width))
+    (format stream "~%")
+    (dolist (entry (reverse path))
+      (print-entry-options entry stream width option-width))
+    (let* ((examples (adopt::examples most-specific-interface))
+           (example-column 2)
+           (example-width (- width example-column)))
+      (when (and examples include-examples)
+        (format stream "~%Examples:~%")
+        (loop :for (prose . command) :in examples
+              :do
+                 (format stream "~%~{  ~A~^~%~}~2%      ~A~%"
+                         (bobbin:wrap (list prose) example-width)
+                         command))))
+    (when (subcommand-folder-p (first path))
+      (format stream "~%Available subcommands:~%~{  ~A~^~%~}~%"
+              (bobbin:wrap (list (format nil "~{~A~^, ~}"
+                                         (hash-table-keys (subcommands (first path)))))
+                           width)))))
+
 (defun print-folder-help (folder &rest args &key (stream *standard-output*) (width 80))
   "Prints help for the folder. Ends the help message with a list of the
 available subcommands."
-  (apply #'adopt:print-help (pseudo-interface folder) args)
+  (apply #'adopt:print-help (interface folder) args)
   (terpri stream)
   (write-line (bobbin:wrap (format nil "Available subcommands: ~{~A~^ ~}"
                                    (hash-table-keys (subcommands folder)))
                            width)
               stream))
+
+(defgeneric print-path-help-and-exit (path
+                                      &key stream program-name width option-width include-examples
+                                        code))
+
+(defmethod print-path-help-and-exit ((path list)
+                                     &key
+                                       (stream *standard-output*)
+                                       (program-name (first (adopt:argv)))
+                                       (width 80)
+                                       (option-width 20)
+                                       (include-examples t)
+                                       (code 0))
+  (print-path-help path :stream stream
+                        :program-name program-name
+                        :width width
+                        :option-width option-width
+                        :include-examples include-examples)
+  (uiop:quit code))
 
 (defun print-help-and-exit (c &key (code 1) (stream *standard-output*))
   (invoke-restart (find-restart 'print-help-and-exit c) :code code :stream stream))
@@ -198,58 +269,70 @@ available subcommands."
     :reader unknown-subcommand-folder)
    (key
     :initarg :key
-    :reader unknown-subcommand-key))
+    :reader unknown-subcommand-key)
+   (path
+    :initarg :path
+    :reader unknown-subcommand-path))
   (:documentation
    "Signals that a subcommand could not be found."))
 
 (define-condition folder-is-terminal (error)
   ((folder
     :initarg :folder
-    :reader folder-is-terminal-folder))
+    :reader folder-is-terminal-folder)
+   (path
+    :initarg :path
+    :reader folder-is-terminal-path))
   (:documentation
    "Signals that no terminal subcommand was found"))
 
-(defun signal-folder-is-terminal (folder)
+(defun signal-folder-is-terminal (folder path)
   (restart-case
-      (error 'folder-is-terminal :folder folder)
+      (error 'folder-is-terminal :folder folder :path path)
     (print-help-and-exit (&key (code 1) (stream *standard-output*))
       :report "Print help to STREAM and exit with CODE"
-      (print-folder-help folder :stream stream)
-      (adopt:exit code))))
+      (print-path-help-and-exit path :code code :stream stream))))
 
-(defun signal-unknown-subcommand (folder key)
+(defun signal-unknown-subcommand (folder path key)
   (restart-case
-      (error 'unknown-subcommand :folder folder :key key)
+      (error 'unknown-subcommand :folder folder :key key :path)
     (print-help-and-exit (&key (code 1) (stream *standard-output*))
       :report "Print help to STREAM and exit with CODE"
-      (print-folder-help folder :stream stream)
-      (adopt:exit code))))
+      (print-path-help-and-exit path :stream stream :code code))))
 
-(defgeneric dispatch (interface &key arguments options))
+(defun dispatch (interface &key (arguments (rest (adopt:argv))))
+  (dispatch-subcommand interface :arguments arguments
+                                 :options (make-hash-table)))
 
-(defmethod dispatch ((terminal subcommand-terminal)
-                     &key (arguments (rest (adopt:argv)))
-                       (options (make-hash-table)))
+(defgeneric dispatch-subcommand (interface &key arguments options))
+
+(defmethod dispatch-subcommand ((terminal subcommand-terminal)
+                                &key (arguments (rest (adopt:argv)))
+                                  (options (make-hash-table))
+                                  path)
   (multiple-value-bind (new-arguments new-options)
       (adopt:parse-options (interface terminal) arguments)
-    (funcall (%function terminal) new-arguments (merge-hts options new-options))))
+    (funcall (%function terminal) new-arguments (merge-hts options new-options)
+             (list* terminal path))))
 
-(defmethod dispatch ((folder subcommand-folder)
-                     &key (arguments (rest (adopt:argv)))
-                       (options (make-hash-table)))
+(defmethod dispatch-subcommand ((folder subcommand-folder)
+                                &key (arguments (rest (adopt:argv)))
+                                  (options (make-hash-table))
+                                  path)
   (multiple-value-bind (new-arguments new-options)
       (handler-bind ((adopt:unrecognized-option 'adopt:treat-as-argument))
-        (adopt:parse-options (pseudo-interface folder) arguments))
+        (adopt:parse-options (interface folder) arguments))
     (let ((options (merge-hts options new-options))
           (arguments new-arguments))
       (flet ((thunk (&key (arguments arguments) (options options))
                (unless (not (null (first arguments)))
                  ;; This folder is terminal. Can't figure out what to do next!
-                 (signal-folder-is-terminal folder))
+                 (signal-folder-is-terminal folder (list* folder path)))
                (let ((subcommand (gethash (first arguments) (subcommands folder))))
                  (unless (not (null subcommand))
-                   (signal-unknown-subcommand folder (first arguments)))
-                 (dispatch subcommand :options options :arguments (rest arguments)))))
+                   (signal-unknown-subcommand folder path (first arguments)))
+                 (dispatch-subcommand subcommand :options options :arguments (rest arguments)
+                                                 :path (list* folder path)))))
         (let ((next (%function folder)))
           (if next
               (funcall next arguments options #'thunk)

@@ -81,7 +81,8 @@
          *b-opts* options)
   (funcall thunk))
 
-(defun run-c (arguments options)
+(defun run-c (arguments options path)
+  (declare (ignore path))
   (psetf *c-run-p* t
          *c-args* arguments
          *c-opts* options))
@@ -191,5 +192,6 @@
             (handler-case
                 (dispatch *a* :arguments (list "b"))
               (folder-is-terminal (c)
-                (print-folder-help (folder-is-terminal-folder c) :stream s))))))
-    (is (uiop:string-suffix-p (uiop:stripln string) "Available subcommands: c"))))
+                (print-path-help (folder-is-terminal-path c) :stream s))))))
+    (is (uiop:string-suffix-p (uiop:stripln string) "Available subcommands:
+  c"))))

@@ -11,4 +11,4 @@
   :perform (test-op (op c) (unless (symbol-call :fiveam :run! :adopt-subcommands)
                              (error "test failue")))
   :components ((:file "adopt-subcommands"))
-  :depends-on (#:adopt #:bobbin #:split-sequence))
+  :depends-on (#:adopt #:bobbin #:split-sequence #:uiop))
