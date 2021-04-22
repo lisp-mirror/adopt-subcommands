@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.1 - 2021-04-22
+
 Added more metadata fields to asd system definition.
 
 ## v0.2.0 - 2021-04-22
