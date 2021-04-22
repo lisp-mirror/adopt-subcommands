@@ -45,7 +45,6 @@ restarts provided) with two primary exceptions:
   library:
 
   #+begin_src common-lisp
-    (require :asdf)
     (eval-when (:compile-toplevel :load-toplevel :execute)
       ;; When this gets into Quicklisp...
       (ql:quickload '(:adopt-subcommands) :silent t))
