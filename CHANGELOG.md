@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+Added more metadata fields to asd system definition.
+
 ## v0.2.0 - 2021-04-22
 
 Added support for printing help of a complete path (includes all options for
