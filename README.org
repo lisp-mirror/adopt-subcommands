@@ -32,6 +32,78 @@ restarts provided) with two primary exceptions:
    provides native support for it, so you do not need to duplicate the checks
    for your program's help option everywhere.
 
+* How to use
+
+  In this section, we describe how to use the library, partially illustrated by
+  examples from [[file:simple-demo.lisp][=simple-demo.lisp=]] (see the History section for more details on
+  the provenance of this file).
+
+  First, you must define your program's hierarchy. Terminals are defined using
+  =make-subcommand-terminal=. It accepts the same arguments as
+  =adopt:make-interface=, with the addition of the mandatory =:function= and
+  optional =:key= keywords.
+
+  The provided function will be called once we dispatch based on the command
+  line arguments.
+
+  The key is used if you want to specify the name of the subcommand; it is
+  normally not required as it is derived from =:name=.
+
+  For example:
+
+  #+begin_src common-lisp
+    (defparameter *ui/foo*
+      (adopt-subcommands:make-subcommand-terminal
+        :name "subex foo"
+        :usage "foo [-a|-b]"
+        :summary "foo some things"
+        :help "foo some things"
+        :contents (list *o/foo/a* *o/foo/b*)
+        :function 'run/foo))
+  #+end_src
+
+  Folders are defined using =make-subcommand-folder=. It accepts the same
+  arguments as =adopt:make-interface=, with the addition of the optional
+  =:function= and =:key= keywords.
+
+  If provided, the function will be called once we dispatch based on the
+  command line arguments, before continuing to process the remainder of the
+  arguments. It can be used to establish dynamic bindings or otherwise munge
+  the arguments before continuing to process them.
+
+  The key is used if you want to specify the name of the folder; it is normally
+  not required as it is derived from =:name=.
+
+  Additionally, the =:contents= of a folder can include other folders or
+  terminals. For example:
+
+  #+begin_src common-lisp
+    (defparameter *ui*
+      (adopt-subcommands:make-subcommand-folder
+        :name "subex"
+        :usage "[subcommand] [options]"
+        :help "subcommand example program"
+        :summary "an example program that uses subcommands"
+        :contents (list *o/help* *o/version* *ui/foo* *ui/bar*)
+        :function 'run/global))
+  #+end_src
+
+  Next, you must actually process the arguments and call the desired
+  functions. This is accomplished using the =dispatch= function. It requires a
+  folder as an argument. It can additionally be provided the list of
+  arguments. Last, if =print-help-and-exit= is non-NIL, it should name our
+  program's help option. If provided, this library processes as much of the
+  command line as it can. Then, if the help option is non-NIL, prints the help
+  and exits the program.
+
+  For example:
+
+  #+begin_src common-lisp
+    (defun toplevel ()
+      (handler-bind ((adopt-subcommands:folder-is-terminal 'adopt-subcommands:print-help-and-exit))
+        (adopt-subcommands:dispatch *ui* :print-help-and-exit 'help)))
+  #+end_src
+
 * History
 
   This work was largely inspired by Steve Losh's [[https://old.reddit.com/r/Common_Lisp/comments/m7gjno/writing_small_cli_programs_in_common_lisp_steve/grdqq1j/][Reddit comment]] on a quick and
