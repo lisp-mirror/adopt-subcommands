@@ -47,12 +47,6 @@ library:
 
   (in-package :subex)
 
-  (defmacro define-toplevel ((name ui) (arguments options) &body body)
-    `(defun ,name (,arguments ,options path)
-       (when (gethash 'help ,options)
-         (adopt-subcommands:print-help-and-exit path))
-       ,@body))
-
   ;;;; Subcommand Foo -----------------------------------------------------------
   (defparameter *o/foo/a*
     (adopt:make-option 'a :result-key 'mode :short #\a :help "run foo in mode A" :reduce (constantly :a)))
@@ -69,7 +63,8 @@ library:
       :contents (list *o/foo/a* *o/foo/b*)
       :function 'run/foo))
 
-  (define-toplevel (run/foo *ui/foo*) (arguments options)
+  (defun run/foo (arguments options path)
+    (declare (ignore path))
     (unless (null arguments)
       (error "Foo does not take arguments, got ~S" arguments))
     (format t "Running foo in ~A mode.~%" (gethash 'mode options)))
@@ -87,7 +82,8 @@ library:
       :contents (list *o/bar/meow*)
       :function 'run/bar))
 
-  (define-toplevel (run/bar *ui/bar*) (paths options)
+  (defun run/bar (paths options path)
+    (declare (ignore path))
     (when (null paths)
       (error "Bar requires arguments, got none."))
     (dolist (p paths)
@@ -123,7 +119,7 @@ library:
   (defun toplevel ()
     (sb-ext:disable-debugger)
     (handler-bind ((adopt-subcommands:folder-is-terminal 'adopt-subcommands:print-help-and-exit))
-      (adopt-subcommands:dispatch *ui*)))
+      (adopt-subcommands:dispatch *ui* :print-help-and-exit 'help)))
 #+end_src
 
 * Deficiencies

@@ -299,26 +299,34 @@ The remaining arguments are passed directly to `adopt:make-interface`."
       :report "Print help to STREAM and exit with EXIT-CODE"
       (print-help-and-exit path :stream stream :exit-code exit-code))))
 
-(defun dispatch (interface &key (arguments (rest (adopt:argv))))
+(defun dispatch (interface &key (arguments (rest (adopt:argv))) print-help-and-exit)
   (dispatch-subcommand interface :arguments arguments
                                  :options (make-hash-table)
-                                 :path (make-instance 'subcommand-path :path nil)))
+                                 :path (make-instance 'subcommand-path :path nil)
+                                 :print-help-and-exit print-help-and-exit))
 
-(defgeneric dispatch-subcommand (interface &key arguments options))
+(defgeneric dispatch-subcommand (interface &key arguments options print-help-and-exit))
 
 (defmethod dispatch-subcommand ((terminal subcommand-terminal)
                                 &key (arguments (rest (adopt:argv)))
                                   (options (make-hash-table))
-                                  path)
+                                  path
+                                  print-help-and-exit)
   (multiple-value-bind (new-arguments new-options)
       (adopt:parse-options (interface terminal) arguments)
-    (funcall (%function terminal) new-arguments (merge-hts options new-options)
-             (extend-path terminal path))))
+    (let ((options (merge-hts options new-options))
+          (arguments new-arguments)
+          (path (extend-path terminal path)))
+      (when (and (not (null print-help-and-exit))
+                 (gethash print-help-and-exit options))
+        (print-help-and-exit path))
+      (funcall (%function terminal) arguments options path))))
 
 (defmethod dispatch-subcommand ((folder subcommand-folder)
                                 &key (arguments (rest (adopt:argv)))
                                   (options (make-hash-table))
-                                  path)
+                                  path
+                                  print-help-and-exit)
   (multiple-value-bind (new-arguments new-options)
       (handler-bind ((adopt:unrecognized-option 'adopt:treat-as-argument))
         (adopt:parse-options (interface folder) arguments))
@@ -327,13 +335,19 @@ The remaining arguments are passed directly to `adopt:make-interface`."
       (flet ((thunk (&key (arguments arguments) (options options))
                (let ((path (extend-path folder path)))
                  (unless (not (null (first arguments)))
-                   ;; This folder is terminal. Can't figure out what to do next!
-                   (signal-folder-is-terminal folder path))
+                   (if (and (not (null print-help-and-exit))
+                            (gethash print-help-and-exit options))
+                       (print-help-and-exit path)
+                       ;; This folder is terminal and help was not
+                       ;; requested. Can't figure out what to do next!
+                       (signal-folder-is-terminal folder path)))
                  (let ((subcommand (gethash (first arguments) (subcommands folder))))
                    (unless (not (null subcommand))
                      (signal-unknown-subcommand folder path (first arguments)))
-                   (dispatch-subcommand subcommand :options options :arguments (rest arguments)
-                                                   :path path)))))
+                   (dispatch-subcommand subcommand :options options
+                                                   :arguments (rest arguments)
+                                                   :path path
+                                                   :print-help-and-exit print-help-and-exit)))))
         (let ((next (%function folder)))
           (if next
               (funcall next arguments options #'thunk)
